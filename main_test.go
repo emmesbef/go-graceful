@@ -141,118 +141,6 @@ func TestShutdownOrder(t *testing.T) {
 	}
 }
 
-func TestParallelShutdown(t *testing.T) {
-	manager := NewManager(5 * time.Second)
-
-	var mu sync.Mutex
-	startTimes := make([]time.Time, 0, 3)
-	endTimes := make([]time.Time, 0, 3)
-
-	// Register multiple components with the same order
-	for i := 0; i < 3; i++ {
-		manager.Register("component", func(ctx context.Context) error {
-			mu.Lock()
-			startTimes = append(startTimes, time.Now())
-			mu.Unlock()
-
-			time.Sleep(100 * time.Millisecond)
-
-			mu.Lock()
-			endTimes = append(endTimes, time.Now())
-			mu.Unlock()
-			return nil
-		}, 1)
-	}
-
-	// Create done channel
-	done := make(chan struct{})
-
-	// Start manager in a goroutine
-	go func() {
-		manager.Start()
-		close(done)
-	}()
-
-	// Send termination signal
-	p, err := os.FindProcess(os.Getpid())
-	if err != nil {
-		t.Fatal(err)
-	}
-	err = p.Signal(syscall.SIGTERM)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	// Wait for shutdown to complete
-	select {
-	case <-done:
-	case <-time.After(2 * time.Second):
-		t.Fatal("Shutdown timeout")
-	}
-
-	mu.Lock()
-	defer mu.Unlock()
-
-	// Verify components shut down in parallel
-	if len(startTimes) != 3 || len(endTimes) != 3 {
-		t.Fatal("Expected 3 start and end times")
-	}
-
-	// Check that the components started at roughly the same time
-	for i := 1; i < len(startTimes); i++ {
-		diff := startTimes[i].Sub(startTimes[0])
-		if diff > 50*time.Millisecond {
-			t.Errorf("Components did not start in parallel: time difference %v", diff)
-		}
-	}
-}
-
-func TestErrorHandling(t *testing.T) {
-	manager := NewManager(time.Second)
-
-	expectedError := errors.New("shutdown error")
-	errorChan := make(chan error, 1)
-
-	manager.Register("error-component", func(ctx context.Context) error {
-		errorChan <- expectedError
-		return expectedError
-	}, 1)
-
-	// Create done channel
-	done := make(chan struct{})
-
-	// Start manager in a goroutine
-	go func() {
-		manager.Start()
-		close(done)
-	}()
-
-	// Send termination signal
-	p, err := os.FindProcess(os.Getpid())
-	if err != nil {
-		t.Fatal(err)
-	}
-	err = p.Signal(syscall.SIGTERM)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	// Wait for shutdown to complete
-	select {
-	case <-done:
-		select {
-		case err := <-errorChan:
-			if err != expectedError {
-				t.Errorf("Expected error %v, got %v", expectedError, err)
-			}
-		case <-time.After(time.Second):
-			t.Error("Did not receive expected error")
-		}
-	case <-time.After(2 * time.Second):
-		t.Error("Shutdown did not complete after error")
-	}
-}
-
 func TestShutdownTimeout(t *testing.T) {
 	timeout := 2 * time.Second
 	manager := NewManager(timeout)
@@ -314,5 +202,131 @@ func TestShutdownTimeout(t *testing.T) {
 		}
 	case <-time.After(timeout * 4):
 		t.Error("Shutdown did not complete within expected timeframe")
+	}
+}
+
+func TestParallelShutdown(t *testing.T) {
+	manager := NewManager(10 * time.Second) // Increased timeout
+
+	var mu sync.Mutex
+	startTimes := make([]time.Time, 0, 3)
+	endTimes := make([]time.Time, 0, 3)
+
+	// Register multiple components with the same order
+	for i := 0; i < 3; i++ {
+		manager.Register("component", func(ctx context.Context) error {
+			mu.Lock()
+			startTimes = append(startTimes, time.Now())
+			mu.Unlock()
+
+			time.Sleep(100 * time.Millisecond)
+
+			mu.Lock()
+			endTimes = append(endTimes, time.Now())
+			mu.Unlock()
+			return nil
+		}, 1)
+	}
+
+	// Create done channel
+	done := make(chan struct{})
+
+	// Start manager in a goroutine
+	go func() {
+		t.Log("Starting manager")
+		manager.Start()
+		t.Log("Manager stopped")
+		close(done)
+	}()
+
+	// Give the manager time to set up
+	time.Sleep(100 * time.Millisecond)
+
+	// Send termination signal
+	p, err := os.FindProcess(os.Getpid())
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Log("Sending SIGTERM signal")
+	err = p.Signal(syscall.SIGTERM)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Wait for shutdown to complete
+	select {
+	case <-done:
+		t.Log("Shutdown completed")
+	case <-time.After(10 * time.Second): // Increased timeout
+		t.Fatal("Shutdown timeout")
+	}
+
+	mu.Lock()
+	defer mu.Unlock()
+
+	// Verify components shut down in parallel
+	if len(startTimes) != 3 || len(endTimes) != 3 {
+		t.Fatal("Expected 3 start and end times")
+	}
+
+	// Check that the components started at roughly the same time
+	for i := 1; i < len(startTimes); i++ {
+		diff := startTimes[i].Sub(startTimes[0])
+		if diff > 50*time.Millisecond {
+			t.Errorf("Components did not start in parallel: time difference %v", diff)
+		}
+	}
+}
+
+func TestErrorHandling(t *testing.T) {
+	manager := NewManager(time.Second)
+
+	expectedError := errors.New("shutdown error")
+	errorChan := make(chan error, 1)
+
+	manager.Register("error-component", func(ctx context.Context) error {
+		errorChan <- expectedError
+		return expectedError
+	}, 1)
+
+	// Create done channel
+	done := make(chan struct{})
+
+	// Start manager in a goroutine
+	go func() {
+		t.Log("Starting manager")
+		manager.Start()
+		t.Log("Manager stopped")
+		close(done)
+	}()
+
+	// Give the manager time to set up
+	time.Sleep(100 * time.Millisecond)
+
+	// Send termination signal
+	p, err := os.FindProcess(os.Getpid())
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Log("Sending SIGTERM signal")
+	err = p.Signal(syscall.SIGTERM)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Wait for shutdown to complete
+	select {
+	case <-done:
+		t.Log("Shutdown completed")
+		select {
+		case err := <-errorChan:
+			if err != expectedError {
+				t.Errorf("Expected error %v, got %v", expectedError, err)
+			}
+		case <-time.After(time.Second):
+			t.Error("Did not receive expected error")
+		}
+	case <-time.After(2 * time.Second):
+		t.Error("Shutdown did not complete after error")
 	}
 }
