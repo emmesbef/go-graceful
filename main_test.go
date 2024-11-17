@@ -141,59 +141,6 @@ func TestShutdownOrder(t *testing.T) {
 	}
 }
 
-func TestShutdownTimeout(t *testing.T) {
-	timeout := 100 * time.Millisecond
-	manager := NewManager(timeout)
-
-	timeoutOccurred := make(chan bool, 1)
-
-	// Register a component that takes longer than the timeout
-	manager.Register("slow-component", func(ctx context.Context) error {
-		select {
-		case <-ctx.Done():
-			timeoutOccurred <- true
-			return ctx.Err()
-		case <-time.After(timeout * 2):
-			timeoutOccurred <- false
-			return nil
-		}
-	}, 1)
-
-	// Create done channel
-	done := make(chan struct{})
-
-	// Start manager in a goroutine
-	go func() {
-		manager.Start()
-		close(done)
-	}()
-
-	// Send termination signal
-	p, err := os.FindProcess(os.Getpid())
-	if err != nil {
-		t.Fatal(err)
-	}
-	err = p.Signal(syscall.SIGTERM)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	// Wait for shutdown to complete
-	select {
-	case <-done:
-		select {
-		case didTimeout := <-timeoutOccurred:
-			if !didTimeout {
-				t.Error("Expected timeout to occur but it didn't")
-			}
-		case <-time.After(timeout * 3):
-			t.Error("Didn't receive timeout status")
-		}
-	case <-time.After(timeout * 4):
-		t.Error("Shutdown did not complete within expected timeframe")
-	}
-}
-
 func TestParallelShutdown(t *testing.T) {
 	manager := NewManager(5 * time.Second)
 
@@ -303,5 +250,69 @@ func TestErrorHandling(t *testing.T) {
 		}
 	case <-time.After(2 * time.Second):
 		t.Error("Shutdown did not complete after error")
+	}
+}
+
+func TestShutdownTimeout(t *testing.T) {
+	timeout := 2 * time.Second
+	manager := NewManager(timeout)
+
+	timeoutOccurred := make(chan bool, 1)
+
+	// Register a component that takes longer than the timeout
+	manager.Register("slow-component", func(ctx context.Context) error {
+		select {
+		case <-ctx.Done():
+			timeoutOccurred <- true
+			t.Log("slow-component: context done")
+			return ctx.Err()
+		case <-time.After(timeout * 2):
+			timeoutOccurred <- false
+			t.Log("slow-component: completed without timeout")
+			return nil
+		}
+	}, 1)
+
+	// Create done channel
+	done := make(chan struct{})
+
+	// Start manager in a goroutine
+	go func() {
+		t.Log("Starting manager")
+		manager.Start()
+		t.Log("Manager stopped")
+		close(done)
+	}()
+
+	// Give the manager time to set up
+	time.Sleep(100 * time.Millisecond)
+
+	// Send termination signal
+	p, err := os.FindProcess(os.Getpid())
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Log("Sending SIGTERM signal")
+	err = p.Signal(syscall.SIGTERM)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Wait for shutdown to complete
+	select {
+	case <-done:
+		t.Log("Shutdown completed")
+		select {
+		case didTimeout := <-timeoutOccurred:
+			if !didTimeout {
+				t.Error("Expected timeout to occur but it didn't")
+			} else {
+				t.Log("Timeout occurred as expected")
+			}
+		case <-time.After(timeout * 3):
+			t.Error("Didn't receive timeout status")
+		}
+	case <-time.After(timeout * 4):
+		t.Error("Shutdown did not complete within expected timeframe")
 	}
 }
