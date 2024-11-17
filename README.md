@@ -1,3 +1,5 @@
+[![codecov](https://codecov.io/gh/emmesbef/go-graceful/branch/main/graph/badge.svg?token=33P8X97481)](https://codecov.io/gh/emmesbef/go-graceful)
+
 # Graceful Shutdown Manager
 
 A lightweight, flexible Go package that manages graceful shutdown of application components. The manager provides ordered shutdown sequences with configurable timeouts and parallel shutdown capabilities.
