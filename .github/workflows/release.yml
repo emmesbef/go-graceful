@@ -6,8 +6,32 @@ on:
       - 'v*'
 
 jobs:
+  verify-branch:
+    name: Verify Release Branch
+    runs-on: ubuntu-latest
+    outputs:
+      is-main: ${{ steps.check-branch.outputs.is_main }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Check if tag is on main branch
+        id: check-branch
+        run: |
+          COMMIT_SHA=$(git rev-list -n 1 ${{ github.ref }})
+          BRANCH=$(git branch -r --contains $COMMIT_SHA | grep 'origin/main' || true)
+          if [ -n "$BRANCH" ]; then
+            echo "is_main=true" >> $GITHUB_OUTPUT
+          else
+            echo "is_main=false" >> $GITHUB_OUTPUT
+          fi
+
   release:
     name: Release
+    needs: verify-branch
+    if: needs.verify-branch.outputs.is-main == 'true'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
@@ -46,3 +70,15 @@ jobs:
       - name: Verify module
         run: |
           GOPROXY=proxy.golang.org go list -m github.com/${{ github.repository }}@${{ env.VERSION }}
+
+      - name: Notify if release failed
+        if: failure()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const issue = await github.rest.issues.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title: `Release ${process.env.VERSION} failed`,
+              body: 'The release workflow failed. Please check the workflow logs for details.'
+            });
