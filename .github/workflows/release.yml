@@ -7,6 +7,10 @@ on:
     branches: [ main ]
     tags: [ 'v*' ]
 
+permissions:
+  contents: write  # Ensure the token has write permissions to create releases
+  issues: write    # Required to create issues if the release fails
+
 jobs:
   verify:
     name: Verify
