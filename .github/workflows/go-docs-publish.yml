@@ -1,0 +1,41 @@
+name: Publish Go Documentation
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v3
+
+    - name: Set up Go
+      uses: actions/setup-go@v4
+      with:
+        go-version: '1.21'
+
+    - name: Install dependencies
+      run: go mod tidy
+
+    - name: Generate Go documentation
+      run: |
+        godoc -http=:6060 &
+        sleep 10
+        wget -r -np -nH -P docs --cut-dirs=2 http://localhost:6060/pkg/github.com/emmesbef/go-graceful/
+
+    - name: Commit and push documentation
+      run: |
+        git config --global user.name 'github-actions[bot]'
+        git config --global user.email 'github-actions[bot]@users.noreply.github.com'
+        git add docs/
+        git commit -m "Update Go documentation"
+        git push origin main
+
+    - name: Publish to pkg.go.dev
+      run: |
+        curl -X POST https://index.golang.org/index -d '{"path":"github.com/emmesbef/go-graceful"}'
