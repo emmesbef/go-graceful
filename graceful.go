@@ -1,3 +1,5 @@
+// Package graceful provides a manager for handling graceful shutdown
+// of application components with configurable timeout and signal handling.
 package graceful
 
 import (
@@ -10,21 +12,21 @@ import (
 	"time"
 )
 
-// Component represents a shutdownable component with a name and shutdown function
+// Component represents a shutdownable component with a name, shutdown function, and order.
 type Component struct {
 	name     string
 	shutdown func(context.Context) error
 	order    int
 }
 
-// Manager handles graceful shutdown of registered components
+// Manager handles graceful shutdown of registered components.
 type Manager struct {
 	components []Component
 	timeout    time.Duration
 	signals    []os.Signal
 }
 
-// NewManager creates a new shutdown manager with the specified timeout
+// NewManager creates a new shutdown manager with the specified timeout.
 func NewManager(timeout time.Duration) *Manager {
 	return &Manager{
 		components: make([]Component, 0),
@@ -33,13 +35,13 @@ func NewManager(timeout time.Duration) *Manager {
 	}
 }
 
-// WithSignals sets custom signals for the manager
+// WithSignals sets custom signals for the manager and returns the manager.
 func (m *Manager) WithSignals(signals ...os.Signal) *Manager {
 	m.signals = signals
 	return m
 }
 
-// Register adds a new component to be managed
+// Register adds a new component to be managed.
 func (m *Manager) Register(name string, shutdown func(context.Context) error, order int) {
 	m.components = append(m.components, Component{
 		name:     name,
@@ -48,7 +50,7 @@ func (m *Manager) Register(name string, shutdown func(context.Context) error, or
 	})
 }
 
-// Start begins listening for shutdown signals
+// Start begins listening for shutdown signals and performs the shutdown sequence.
 func (m *Manager) Start() {
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, m.signals...)
@@ -87,7 +89,7 @@ func (m *Manager) Start() {
 		components := orderGroups[order]
 		var wg sync.WaitGroup
 
-		// Shutdown components with same order in parallel
+		// Shutdown components with the same order in parallel
 		for _, comp := range components {
 			wg.Add(1)
 			go func(c Component) {
