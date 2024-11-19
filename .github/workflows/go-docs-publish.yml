@@ -38,6 +38,9 @@ jobs:
         git add docs/
         git commit -m "Update Go documentation"
         git push origin main
+        git push "https://${GITHUB_ACTOR}:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" main
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
     - name: Publish to pkg.go.dev
       run: |
