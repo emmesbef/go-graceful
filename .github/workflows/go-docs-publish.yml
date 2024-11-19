@@ -1,4 +1,6 @@
 name: Publish Go Documentation
+permissions:
+  contents: write
 
 on:
   push:
